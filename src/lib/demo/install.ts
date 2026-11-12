@@ -49,6 +49,8 @@ async function handle(request: Request): Promise<Response> {
     });
   }
   if (request.method === 'GET') {
+    // Points at the fixture to add when a new feature calls a new endpoint.
+    // eslint-disable-next-line no-console
     console.warn('[demo] no fixture for', path + url.search);
     return demoError(404);
   }

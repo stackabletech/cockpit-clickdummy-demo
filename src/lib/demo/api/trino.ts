@@ -11,10 +11,19 @@ interface RunningStatement {
   sql: string;
   startedAt: number;
   cancelled: boolean;
+  queryId: string;
+}
+
+// Shaped like Trino's query IDs. The `*.demo.example` host makes the "View in
+// Trino" link open the contact modal (see install.ts).
+let queryCounter = 0;
+function nextQueryId(startedAt: number): string {
+  const time = new Date(startedAt).toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  queryCounter += 1;
+  return `${time.slice(0, 8)}_${time.slice(8)}_${String(queryCounter).padStart(5, '0')}_demo0`;
 }
 
 // Plain Map: module state, not reactive.
-// eslint-disable-next-line svelte/prefer-svelte-reactivity
 const tabs = new Map<string, RunningStatement[]>();
 
 function snapshot(stmt: RunningStatement, now: number, lightweight: boolean): QuerySnapshot {
@@ -30,7 +39,7 @@ function snapshot(stmt: RunningStatement, now: number, lightweight: boolean): Qu
   const finished = state === 'FINISHED';
   const withRows = finished && !lightweight;
   return {
-    trinoQueryUrl: null,
+    trinoQueryUrl: `https://trino.demo.example/ui/#/queries/${stmt.queryId}`,
     state,
     progress: {
       progressPercentage: finished ? 100 : Math.min(99, (elapsed / durationMs) * 100),
@@ -60,7 +69,13 @@ async function query(req: DemoRequest): Promise<Response> {
     tabs.set(
       body.tabId,
       queries.map(({ sql, query }) => {
-        const stmt = { sql, query: query!, startedAt: start, cancelled: false };
+        const stmt = {
+          sql,
+          query: query!,
+          startedAt: start,
+          cancelled: false,
+          queryId: nextQueryId(start)
+        };
         start += query!.durationMs;
         return stmt;
       })

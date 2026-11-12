@@ -93,7 +93,11 @@ export default defineConfig(
   },
   {
     // CLI scripts and E2E helper processes that run without the app's logger.
-    files: ['e2e/support/**/*.ts', 'src/lib/editor/grammar/patch-generated.mjs'],
+    files: [
+      'e2e/support/**/*.ts',
+      'src/lib/editor/grammar/patch-generated.mjs',
+      'dev/serve-demo.mjs'
+    ],
     rules: { 'no-console': 'off' }
   },
   {
