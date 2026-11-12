@@ -4,11 +4,13 @@ import {
   INITIAL_PROGRESS,
   isTerminal,
   type Column,
+  type QueryError,
   type QueryProgress,
   type QuerySnapshot,
   type QueryState
 } from '$lib/types/query.js';
 import { type TrinoClient, type TrinoQueryStats, resolveTrinoPublicUrl } from './client.js';
+import { classifyTrinoError, toQueryError } from './errors.js';
 import { trinoConfig } from './config.js';
 import { collectResults } from './result-collector.js';
 
@@ -23,17 +25,20 @@ const SWEEP_INTERVAL_MS = 60_000;
 // --- TrinoQuery model ---
 
 export interface TrinoQuery {
-  trinoQueryId: string;
+  /** Null if the submit failed before Trino assigned an ID. */
+  trinoQueryId: string | null;
   state: QueryState;
   progress: QueryProgress;
   columns: Column[];
   rows: unknown[][];
-  error: string | null;
+  error: QueryError | null;
   rowLimitReached: boolean;
   sql: string;
   startedAt: number;
   nextUri: string | undefined;
   client: TrinoClient;
+  /** Major Trino version at submit time, null if unknown. Selects the Web UI link format. */
+  trinoVersion: number | null;
   userId: string;
   trinoUser: string;
   completedAt: number | null;
@@ -142,13 +147,30 @@ function getActiveQuery(userId: string, tabId: string): TrinoQuery | undefined {
   return last && !isTerminal(last.state) ? last : undefined;
 }
 
+/** First Trino release serving the redesigned Web UI at `/ui` (legacy UI off by default). */
+const NEW_WEB_UI_VERSION = 483;
+
+/** Deep link to a query in the Trino Web UI. Unknown versions get the current UI. */
+export function trinoQueryUiUrl(
+  trinoPublicUrl: string,
+  trinoQueryId: string,
+  trinoVersion: number | null
+): string {
+  return trinoVersion !== null && trinoVersion < NEW_WEB_UI_VERSION
+    ? `${trinoPublicUrl}/ui/query.html?${trinoQueryId}`
+    : `${trinoPublicUrl}/ui/#/queries/${trinoQueryId}`;
+}
+
 function buildSnapshot(
   query: TrinoQuery,
   trinoPublicUrl: string | null,
   lightweight = false
 ): QuerySnapshot {
   return {
-    trinoQueryUrl: trinoPublicUrl ? `${trinoPublicUrl}/ui/query.html?${query.trinoQueryId}` : null,
+    trinoQueryUrl:
+      trinoPublicUrl && query.trinoQueryId
+        ? trinoQueryUiUrl(trinoPublicUrl, query.trinoQueryId, query.trinoVersion)
+        : null,
     state: query.state,
     progress: query.progress,
     columns: lightweight ? [] : query.columns,
@@ -183,8 +205,13 @@ async function submitStatement(
   log.info({ user_id: userId, tab_id: tabId }, 'submitting query');
   trinoQueryTotal.inc({ outcome: 'submitted' });
   let submitResult;
+  let trinoVersion;
   try {
-    submitResult = await client.submit(sql, options);
+    // The version request is cached per client and never throws.
+    [submitResult, trinoVersion] = await Promise.all([
+      client.submit(sql, options),
+      client.serverVersion()
+    ]);
   } catch (err) {
     trinoQueryTotal.inc({ outcome: 'failed' });
     throw err;
@@ -212,19 +239,48 @@ async function submitStatement(
     startedAt: Date.now(),
     nextUri: submitResult.nextUri,
     client,
+    trinoVersion,
     userId,
     trinoUser: options.user,
     completedAt: null
   };
 
   if (submitResult.error || initialState === 'FAILED') {
-    query.error = submitResult.error?.message ?? 'Query failed';
+    query.error = toQueryError(submitResult.error, trinoQueryId);
     terminateQuery(query, 'FAILED', { decrementGauge: false });
     trinoQueryTotal.inc({ outcome: 'failed' });
   }
 
   log.info({ trino_query_id: trinoQueryId, user_id: userId, tab_id: tabId }, 'query started');
   return query;
+}
+
+/** A statement Trino did not accept, so the user sees why the script stopped. */
+function failedSubmit(
+  client: TrinoClient,
+  userId: string,
+  sql: string,
+  trinoUser: string,
+  err: unknown
+): TrinoQuery {
+  const now = Date.now();
+  return {
+    trinoQueryId: null,
+    state: 'FAILED',
+    progress: INITIAL_PROGRESS,
+    columns: [],
+    rows: [],
+    error: classifyTrinoError(err),
+    rowLimitReached: false,
+    sql,
+    startedAt: now,
+    nextUri: undefined,
+    client,
+    trinoVersion: null,
+    userId,
+    trinoUser,
+    completedAt: now
+  };
 }
 
 function storeQuery(userId: string, tabId: string, query: TrinoQuery): void {
@@ -239,7 +295,7 @@ async function cancelInTrino(query: TrinoQuery): Promise<void> {
   try {
     if (query.nextUri) {
       await query.client.cancelViaUri(query.nextUri, query.trinoUser);
-    } else {
+    } else if (query.trinoQueryId) {
       await query.client.cancel(query.trinoQueryId, query.trinoUser);
     }
   } catch (err) {
@@ -298,6 +354,9 @@ async function runStatements(
       query = await submitStatement(client, userId, tabId, sql, options);
     } catch (err) {
       log.error({ err, user_id: userId, tab_id: tabId }, 'failed to submit statement in script');
+      // A superseded script must not write into the tab its successor owns.
+      if (!signal.aborted)
+        storeQuery(userId, tabId, failedSubmit(client, userId, sql, options.user, err));
       break;
     }
 
@@ -324,7 +383,7 @@ async function runStatements(
       } catch (err) {
         log.error({ err, trino_query_id: query.trinoQueryId }, 'poll loop crashed');
         if (!isTerminal(query.state)) {
-          query.error = 'Internal poll error';
+          query.error = { kind: 'unknown' };
           terminateQuery(query, 'FAILED');
           trinoQueryTotal.inc({ outcome: 'failed' });
         }

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Agent } from 'undici';
 import { logger } from '$lib/server/logging';
+import { TrinoHttpError, TrinoQueryFailure, type TrinoQueryError } from './errors.js';
 import { trinoConfig } from './config.js';
 import { getUserTrinoClient, getUserTrinoUrl } from './user-clients.js';
 
@@ -20,11 +21,21 @@ export interface TrinoQueryStats {
   elapsedTimeMillis?: number;
 }
 
-interface TrinoQueryError {
-  message: string;
-  errorCode?: number;
-  errorName?: string;
-  errorType?: string;
+/** Only the fields we read from `GET /v1/info`. */
+interface TrinoServerInfo {
+  nodeVersion?: { version?: string };
+}
+
+/** How long a detected server version is reused before it is requested again. */
+const VERSION_CACHE_MS = 10 * 60_000;
+/** Shorter for a failed detection, so a brief outage doesn't pin the wrong link format. */
+const VERSION_RETRY_MS = 60_000;
+const VERSION_TIMEOUT_MS = 5_000;
+
+/** Major version from a Trino version string such as `483` or `476-stackable25.7.0`. */
+export function parseTrinoVersion(raw: string | undefined): number | null {
+  const match = /^(\d+)/.exec(raw ?? '');
+  return match ? Number(match[1]) : null;
 }
 
 export interface TrinoQueryResult {
@@ -53,6 +64,8 @@ export class TrinoClient {
   private readonly dispatcher?: Agent;
   private readonly impersonate: boolean;
   private readonly authenticated: boolean;
+  private versionCache?: { version: number | null; expiresAt: number };
+  private versionRequest?: Promise<number | null>;
 
   constructor(options: TrinoClientOptions) {
     this.serverUrl = options.serverUrl.replace(/\/+$/, '');
@@ -91,7 +104,7 @@ export class TrinoClient {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Trino POST /v1/statement failed (${res.status}): ${text}`);
+      throw new TrinoHttpError('POST /v1/statement', res.status, text);
     }
 
     return res.json() as Promise<TrinoQueryResult>;
@@ -112,7 +125,7 @@ export class TrinoClient {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Trino poll failed (${res.status}): ${text}`);
+      throw new TrinoHttpError('poll', res.status, text);
     }
 
     return res.json() as Promise<TrinoQueryResult>;
@@ -127,6 +140,48 @@ export class TrinoClient {
     return headers;
   }
 
+  /**
+   * Major version of the server from `GET /v1/info` (public, no credentials needed).
+   * Cached per client; resolves to null if it cannot be determined. Never throws.
+   */
+  async serverVersion(): Promise<number | null> {
+    if (this.versionCache && this.versionCache.expiresAt > Date.now()) {
+      return this.versionCache.version;
+    }
+    this.versionRequest ??= this.fetchServerVersion().then((version) => {
+      const ttl = version === null ? VERSION_RETRY_MS : VERSION_CACHE_MS;
+      this.versionCache = { version, expiresAt: Date.now() + ttl };
+      this.versionRequest = undefined;
+      return version;
+    });
+    return this.versionRequest;
+  }
+
+  private async fetchServerVersion(): Promise<number | null> {
+    try {
+      const res = await fetch(`${this.serverUrl}/v1/info`, {
+        method: 'GET',
+        headers: this.commonHeaders,
+        signal: AbortSignal.timeout(VERSION_TIMEOUT_MS),
+        // @ts-expect-error — Node fetch supports dispatcher via undici
+        dispatcher: this.dispatcher
+      });
+      if (!res.ok) {
+        log.warn(
+          { trino_url: this.serverUrl, status_code: res.status },
+          'Trino version unavailable'
+        );
+        return null;
+      }
+      const raw = ((await res.json()) as TrinoServerInfo).nodeVersion?.version;
+      log.debug({ trino_url: this.serverUrl, trino_version: raw }, 'Trino version detected');
+      return parseTrinoVersion(raw);
+    } catch (err) {
+      log.warn({ err, trino_url: this.serverUrl }, 'Trino version unavailable');
+      return null;
+    }
+  }
+
   /** DELETE /v1/query/{queryId} — cancel a running query. */
   async cancel(queryId: string, user?: string): Promise<void> {
     const res = await fetch(`${this.serverUrl}/v1/query/${queryId}`, {
@@ -139,7 +194,7 @@ export class TrinoClient {
     // 404 is expected — the query may have already finished and been cleaned up.
     if (!res.ok && res.status !== 404) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Trino DELETE /v1/query failed (${res.status}): ${text}`);
+      throw new TrinoHttpError('DELETE /v1/query', res.status, text);
     }
   }
 
@@ -154,7 +209,7 @@ export class TrinoClient {
 
     if (!res.ok && res.status !== 404 && res.status !== 410) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Trino DELETE nextUri failed (${res.status}): ${text}`);
+      throw new TrinoHttpError('DELETE nextUri', res.status, text);
     }
   }
 }
@@ -263,14 +318,14 @@ export async function trinoMetadataQuery(
   const rows: unknown[][] = result.data ? [...result.data] : [];
 
   if (result.error) {
-    throw new Error(result.error.message);
+    throw new TrinoQueryFailure(result.error);
   }
 
   while (result.nextUri) {
     result = await client.poll(result.nextUri, { user: options.user, signal });
 
     if (result.error) {
-      throw new Error(result.error.message);
+      throw new TrinoQueryFailure(result.error);
     }
     if (result.columns && columns.length === 0) {
       columns = result.columns;

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { TrinoClient, TrinoQueryResult } from './client.js';
 import type { TrinoQuery } from './queries.js';
+import type { QueryError } from '$lib/types/query.js';
 
 // Stable mock functions shared across module re-imports (each test imports a
 // fresh queries.ts so its in-memory store starts empty).
@@ -36,6 +37,7 @@ let client: {
   submit: ReturnType<typeof vi.fn>;
   cancel: ReturnType<typeof vi.fn>;
   cancelViaUri: ReturnType<typeof vi.fn>;
+  serverVersion: ReturnType<typeof vi.fn>;
 };
 
 function trinoClient(): TrinoClient {
@@ -48,7 +50,7 @@ function pending(id: string): TrinoQueryResult {
 }
 
 /** Make collectResults drive each polled query to the given terminal state. */
-function collectTo(state: 'FINISHED' | 'FAILED' | 'CANCELLED', error: string | null = null) {
+function collectTo(state: 'FINISHED' | 'FAILED' | 'CANCELLED', error: QueryError | null = null) {
   return async (query: TrinoQuery) => {
     query.columns = [{ name: 'x', type: 'integer' }];
     query.rows = [[1]];
@@ -106,7 +108,8 @@ beforeEach(async () => {
   client = {
     submit: vi.fn(async (sql: string) => pending(`q-${sql}`)),
     cancel: vi.fn(async () => {}),
-    cancelViaUri: vi.fn(async () => {})
+    cancelViaUri: vi.fn(async () => {}),
+    serverVersion: vi.fn(async () => 483)
   };
   await loadQueries();
 });
@@ -190,13 +193,13 @@ describe('startScript', () => {
   });
 
   it('stops at the first statement that does not finish', async () => {
-    mocks.collectResults.mockImplementationOnce(collectTo('FAILED', 'Table not found'));
+    mocks.collectResults.mockImplementationOnce(collectTo('FAILED', { kind: 'unknown' }));
 
     await q.startScript(trinoClient(), USER, TAB, ['SELECT 1', 'SELECT 2'], OPTS);
 
     expect(client.submit).toHaveBeenCalledTimes(1);
     const [snapshot] = q.getQuerySnapshots(USER, TAB);
-    expect(snapshot).toMatchObject({ state: 'FAILED', error: 'Table not found' });
+    expect(snapshot).toMatchObject({ state: 'FAILED', error: { kind: 'unknown' } });
   });
 
   it('marks a statement without nextUri as finished without polling', async () => {
@@ -258,7 +261,7 @@ describe('startScript', () => {
   it('fails and stops on an error in the submit response', async () => {
     client.submit.mockResolvedValueOnce({
       id: 'q1',
-      error: { message: 'line 1:1: mismatched input' }
+      error: { message: 'line 1:1: mismatched input', errorType: 'USER_ERROR' }
     });
 
     await q.startScript(trinoClient(), USER, TAB, ['SELEC 1', 'SELECT 2'], OPTS); // typos:ignore-line
@@ -268,7 +271,10 @@ describe('startScript', () => {
     expect(mocks.activeDec).not.toHaveBeenCalled();
     expect(mocks.queryTotalInc).toHaveBeenCalledWith({ outcome: 'failed' });
     const [snapshot] = q.getQuerySnapshots(USER, TAB);
-    expect(snapshot).toMatchObject({ state: 'FAILED', error: 'line 1:1: mismatched input' });
+    expect(snapshot).toMatchObject({
+      state: 'FAILED',
+      error: { kind: 'query', message: 'line 1:1: mismatched input' }
+    });
   });
 
   it('treats a FAILED submit response without error details as a failure', async () => {
@@ -280,19 +286,11 @@ describe('startScript', () => {
     expect(mocks.queryTotalInc).not.toHaveBeenCalledWith({ outcome: 'completed' });
     expect(q.getQuerySnapshots(USER, TAB)[0]).toMatchObject({
       state: 'FAILED',
-      error: 'Query failed'
+      error: { kind: 'unknown' }
     });
   });
 
-  it('falls back to a generic message when the submit error has none', async () => {
-    client.submit.mockResolvedValueOnce({ id: 'q1', error: {} });
-
-    await q.startScript(trinoClient(), USER, TAB, ['SELECT 1'], OPTS);
-
-    expect(q.getQuerySnapshots(USER, TAB)[0].error).toBe('Query failed');
-  });
-
-  it('stops without storing a result when submit throws', async () => {
+  it('stops and stores the failed statement when submit throws', async () => {
     client.submit.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
     await expect(
@@ -301,7 +299,27 @@ describe('startScript', () => {
 
     expect(client.submit).toHaveBeenCalledTimes(1);
     expect(mocks.queryTotalInc).toHaveBeenCalledWith({ outcome: 'failed' });
-    expect(q.getQuerySnapshots(USER, TAB)).toEqual([]);
+    expect(q.getQuerySnapshots(USER, TAB)).toEqual([
+      expect.objectContaining({
+        sql: 'SELECT 1',
+        state: 'FAILED',
+        error: { kind: 'unavailable' },
+        trinoQueryUrl: null
+      })
+    ]);
+  });
+
+  it('reports rejected credentials on submit', async () => {
+    const { TrinoHttpError } = await import('./errors.js');
+    client.submit.mockRejectedValueOnce(
+      new TrinoHttpError('POST /v1/statement', 401, 'Unauthorized')
+    );
+
+    await q.startScript(trinoClient(), USER, TAB, ['SELECT 1'], OPTS);
+
+    expect(q.getQuerySnapshots(USER, TAB)).toEqual([
+      expect.objectContaining({ state: 'FAILED', error: { kind: 'unauthenticated' } })
+    ]);
   });
 
   it('stops when Trino returns no query ID', async () => {
@@ -311,7 +329,22 @@ describe('startScript', () => {
 
     expect(client.submit).toHaveBeenCalledTimes(1);
     expect(mocks.queryTotalInc).toHaveBeenCalledWith({ outcome: 'failed' });
-    expect(q.getQuerySnapshots(USER, TAB)).toEqual([]);
+    expect(q.getQuerySnapshots(USER, TAB)).toEqual([
+      expect.objectContaining({ state: 'FAILED', error: { kind: 'unavailable' } })
+    ]);
+  });
+
+  it('does not store a failed submit of a superseded script', async () => {
+    let reject!: (err: Error) => void;
+    client.submit.mockImplementationOnce(() => new Promise((_, rej) => (reject = rej)));
+    const first = q.startScript(trinoClient(), USER, TAB, ['SELECT 1'], OPTS);
+    await vi.waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
+
+    await q.startScript(trinoClient(), USER, TAB, ['SELECT 2'], OPTS);
+    reject(new Error('ECONNREFUSED'));
+    await first;
+
+    expect(q.getQuerySnapshots(USER, TAB).map((s) => s.sql)).toEqual(['SELECT 2']);
   });
 
   it('fails the query when the poll loop crashes', async () => {
@@ -324,7 +357,7 @@ describe('startScript', () => {
     expect(mocks.queryTotalInc).toHaveBeenCalledWith({ outcome: 'failed' });
     expect(q.getQuerySnapshots(USER, TAB)[0]).toMatchObject({
       state: 'FAILED',
-      error: 'Internal poll error'
+      error: { kind: 'unknown' }
     });
   });
 
@@ -495,9 +528,18 @@ describe('getQuerySnapshots', () => {
     await q.startScript(trinoClient(), USER, TAB, ['SELECT 1'], OPTS);
 
     expect(q.getQuerySnapshots(USER, TAB)[0].trinoQueryUrl).toBe(
-      'https://trino.example.com/ui/query.html?q-SELECT 1'
+      'https://trino.example.com/ui/#/queries/q-SELECT 1'
     );
     expect(mocks.resolveTrinoPublicUrl).toHaveBeenCalledWith(USER);
+  });
+
+  it('links to the legacy Trino UI for servers before 483', async () => {
+    client.serverVersion.mockResolvedValue(482);
+    await q.startScript(trinoClient(), USER, TAB, ['SELECT 1'], OPTS);
+
+    expect(q.getQuerySnapshots(USER, TAB)[0].trinoQueryUrl).toBe(
+      'https://trino.example.com/ui/query.html?q-SELECT 1'
+    );
   });
 
   it('omits the Trino UI link without a public URL', async () => {
@@ -505,6 +547,16 @@ describe('getQuerySnapshots', () => {
     await q.startScript(trinoClient(), USER, TAB, ['SELECT 1'], OPTS);
 
     expect(q.getQuerySnapshots(USER, TAB)[0].trinoQueryUrl).toBeNull();
+  });
+});
+
+describe('trinoQueryUiUrl', () => {
+  it.each([
+    [482, 'https://t/ui/query.html?q1'],
+    [483, 'https://t/ui/#/queries/q1'],
+    [null, 'https://t/ui/#/queries/q1']
+  ])('links version %s to %s', (version, expected) => {
+    expect(q.trinoQueryUiUrl('https://t', 'q1', version)).toBe(expected);
   });
 });
 
