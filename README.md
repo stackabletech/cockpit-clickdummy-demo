@@ -1,3 +1,14 @@
+> [!NOTE]
+> **Click dummy.** This repository is a copy of [stackabletech/cockpit](https://github.com/stackabletech/cockpit)
+> plus a static demo with fixed example data and no backend, published at
+> <https://stackabletech.github.io/cockpit-clickdummy-demo/>.
+>
+> - Build and serve it locally: `npm run build:demo && npm run serve:demo`
+> - Every push to `main` deploys it (`.github/workflows/demo-pages.yaml`).
+> - To update, merge the cockpit's `main` into this repository's `main`. The cockpit's own CI
+>   workflows and Dependabot config are removed here; if a merge brings changes to them, delete
+>   them again.
+
 <p align="center">
   <img width="150" src="./.readme/static/borrowed/Icon_Stackable.svg" alt="Stackable Logo"/>
 </p>
