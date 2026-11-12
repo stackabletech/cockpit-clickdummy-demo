@@ -81,6 +81,33 @@ try {
   console.log('ok  storage browse');
   await screenshot('3-storage');
 
+  // Parquet: schema and statistics first, rows on the Data tab.
+  await page.goto(`${origin}/storage/browse/s3.demo.example/lakehouse/warehouse/customers/data`);
+  await page.getByText('00000-0-data.parquet').first().click();
+  await page.getByRole('button', { name: /^preview$/i }).click();
+  const previewDialog = page.getByRole('dialog').filter({ hasText: '00000-0-data.parquet' });
+  await previewDialog.getByText('mktsegment').first().waitFor();
+  await screenshot('4-parquet-schema');
+  await previewDialog.getByRole('tab', { name: 'Data', exact: true }).click();
+  // Not row 1: its name is also the column's minimum on the hidden Metadata tab.
+  await previewDialog.getByText('Customer#000000002').first().waitFor();
+  console.log('ok  parquet preview: schema and rows');
+  await screenshot('5-parquet-data');
+  await page.keyboard.press('Escape');
+
+  // Other binary files: the "cannot be displayed" fallback, not an empty editor.
+  await page.goto(`${origin}/storage/browse/s3.demo.example/ml-models/churn/v3`);
+  await page.getByText('model.onnx').first().click();
+  await page.getByRole('button', { name: /^preview$/i }).click();
+  await page
+    .getByRole('dialog')
+    .getByText(/binary/i)
+    .first()
+    .waitFor();
+  console.log('ok  binary preview: fallback');
+  await screenshot('6-binary');
+  await page.keyboard.press('Escape');
+
   await page.goto(origin + '/settings/connections');
   await page.getByText('Demo object store').first().waitFor();
   console.log('ok  settings connections');

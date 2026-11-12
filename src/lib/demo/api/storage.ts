@@ -4,6 +4,7 @@
 import type { StoragePage, StorageObject } from '$lib/storage/types.js';
 import type { BucketDetails, DirectoryMetadata, FileDetails } from '$lib/storage/details-types.js';
 import { demoBuckets, demoDirectories } from '../fixtures/storage.js';
+import { demoParquet, type DemoParquet } from '../fixtures/parquet.js';
 import { demoError, json, type DemoRequest } from './response.js';
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
@@ -124,18 +125,74 @@ function csvNdjson(content: string, req: DemoRequest): Response {
   });
 }
 
+/** Schema, statistics and, with `data=true`, a page of rows, like the server's Parquet preview. */
+function parquetNdjson(parquet: DemoParquet, size: number, req: DemoRequest): Response {
+  const offset = Number(req.url.searchParams.get('offset') ?? 0);
+  const limit = Number(req.url.searchParams.get('limit') ?? 250);
+  const columnSize = Math.round(size / parquet.columns.length);
+  const header = {
+    t: 'h',
+    h: parquet.columns.map((c) => c.name),
+    tr: parquet.totalRows,
+    s: parquet.columns.map((c) => ({
+      name: c.name,
+      type: c.type,
+      codec: 'ZSTD',
+      compressedSize: columnSize,
+      uncompressedSize: columnSize * 3,
+      stats: { nullCount: 0, distinctCount: null, min: c.min, max: c.max }
+    })),
+    m: {
+      rowGroups: 1,
+      compressionCodecs: ['ZSTD'],
+      compressionUniform: true,
+      hasOffsetIndex: true,
+      hasColumnIndex: true,
+      createdBy: 'Trino',
+      version: 2,
+      arrowSchema: null
+    }
+  };
+  const lines: unknown[] = [header];
+  const includeData = req.url.searchParams.get('data') === 'true';
+  const end = includeData ? Math.min(parquet.totalRows, offset + limit) : offset;
+  if (includeData) {
+    const rows = Array.from({ length: end - offset }, (_, i) => parquet.row(offset + i));
+    parquet.columns.forEach((c, col) =>
+      lines.push({ t: 'c', n: c.name, v: rows.map((r) => r[col]) })
+    );
+  }
+  lines.push({ t: 'd' });
+  return new Response(lines.map((line) => JSON.stringify(line)).join('\n') + '\n', {
+    headers: {
+      'Content-Type': 'application/x-ndjson',
+      'X-Preview-Format': 'parquet',
+      'X-Preview-Renderable': 'true',
+      'X-Preview-Data-Blocked': 'false',
+      'X-Preview-Truncated': String(end < parquet.totalRows),
+      'X-Preview-Total-Size': String(size),
+      'X-Preview-Total-Rows': String(parquet.totalRows),
+      'X-Preview-Offset': String(offset)
+    }
+  });
+}
+
+/** The first bytes of a binary file: not valid UTF-8, so the preview shows its binary fallback. */
+const BINARY_BYTES = new Uint8Array([0x80, 0x81, 0x82, 0x83, 0xff, 0xfe, 0xfd, 0xfc]);
+
 function preview(req: DemoRequest): Response {
   const { objects } = bucketOf(req);
   const key = req.url.searchParams.get('key') ?? '';
   const file = objects?.[key];
   if (!file) return demoError(404);
+  const parquet = key.endsWith('.parquet') ? demoParquet(key) : null;
+  if (parquet) return parquetNdjson(parquet, file.size, req);
   if (file.content === undefined) {
-    return new Response('', {
+    return new Response(BINARY_BYTES, {
       headers: {
-        'Content-Type': file.contentType ?? 'application/octet-stream',
-        'X-Preview-Renderable': 'false',
+        'Content-Type': 'application/octet-stream',
         'X-Preview-Total-Size': String(file.size),
-        'X-Preview-Bytes': '0',
+        'X-Preview-Bytes': String(BINARY_BYTES.length),
         'X-Preview-Truncated': 'true'
       }
     });
