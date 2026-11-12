@@ -37,7 +37,7 @@ export const demoBookmarks: Bookmark[] = [
     name: 'Spark History Server',
     environment: 'Staging',
     url: 'https://spark-history.demo.example/',
-    pinned: true,
+    pinned: false,
     createdAt: '2026-01-01T00:00:00.000Z'
   },
   {
@@ -46,7 +46,7 @@ export const demoBookmarks: Bookmark[] = [
     name: 'OpenSearch Dashboards',
     environment: 'Staging',
     url: 'https://opensearch.demo.example/',
-    pinned: true,
+    pinned: false,
     createdAt: '2026-01-01T00:00:00.000Z'
   }
 ];
