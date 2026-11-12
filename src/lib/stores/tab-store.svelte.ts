@@ -7,8 +7,7 @@ import { demoSql } from '$lib/demo/fixtures/trino';
 const MAX_TABS = 8;
 const INDEX_KEY = 'trino_tabs_index';
 const TAB_KEY_PREFIX = 'trino_tab_';
-// THROWAWAY POC: the static demo starts with its example queries.
-const DEFAULT_SQL = DEMO ? demoSql() : 'SELECT 1';
+const DEFAULT_SQL = 'SELECT 1';
 const DEBOUNCE_MS = 500;
 
 /** Maximum characters allowed per tab's SQL content. */
@@ -92,7 +91,8 @@ function loadFromStorage(): { tabs: TabState[]; activeTabId: string } | null {
 }
 
 function createDefaultState(): { tabs: TabState[]; activeTabId: string } {
-  const tab = makeTab();
+  // THROWAWAY POC: the static demo's first tab holds its example queries.
+  const tab = makeTab(DEMO ? demoSql() : DEFAULT_SQL);
   return { tabs: [tab], activeTabId: tab.id };
 }
 

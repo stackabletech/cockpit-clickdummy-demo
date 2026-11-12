@@ -68,6 +68,19 @@ try {
   await expectGate('view in trino');
   if (page.context().pages().length !== pagesBefore) problems.push('View in Trino opened a tab');
 
+  // A new tab starts like the real app, with a query the demo can run.
+  await page.getByRole('button', { name: 'New Tab' }).click();
+  await page.locator('.monaco-editor').getByText('SELECT 1').first().waitFor();
+  if ((await page.locator('.monaco-editor').first().innerText()).includes('Welcome')) {
+    problems.push('New tab contains the welcome script');
+  }
+  await run.click();
+  await page
+    .getByText(/FINISHED|Finished/)
+    .first()
+    .waitFor({ timeout: 15000 });
+  console.log('ok  new tab runs SELECT 1');
+
   await page.locator('.monaco-editor').first().click();
   await page.keyboard.press('Control+A');
   await page.keyboard.type('SELECT 42');
