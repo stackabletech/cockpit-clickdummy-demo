@@ -20,6 +20,9 @@ const routes: Record<string, Route> = {
     json({ session: { id: 'demo-session' }, user: { id: 'demo-user' } })
 };
 
+/** Reads that would download a file. */
+const GATED_READS = new Set(['/api/storage/download']);
+
 function appPath(url: URL): string {
   return base && url.pathname.startsWith(base) ? url.pathname.slice(base.length) : url.pathname;
 }
@@ -37,6 +40,11 @@ function isGated(url: URL): boolean {
 async function handle(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const path = appPath(url);
+  if (request.method === 'GET' && GATED_READS.has(path)) {
+    openDemoGate();
+    // Never settles: an error response would add an error toast to the modal.
+    return new Promise<Response>(() => {});
+  }
   const route = routes[path];
   // Only reads are faked, apart from running and cancelling example queries.
   const readOnly = request.method === 'GET' || path === '/api/trino/query';

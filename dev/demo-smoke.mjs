@@ -119,7 +119,16 @@ try {
     .waitFor();
   console.log('ok  binary preview: fallback');
   await screenshot('6-binary');
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /download full file/i })
+    .click();
+  await expectGate('download full file');
   await page.keyboard.press('Escape');
+
+  // The toolbar's Download button for the selected file.
+  await page.getByRole('button', { name: /^download$/i }).click();
+  await expectGate('download toolbar');
 
   await page.goto(origin + '/settings/connections');
   await page.getByText('Demo object store').first().waitFor();
