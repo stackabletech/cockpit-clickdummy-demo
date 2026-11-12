@@ -39,7 +39,7 @@ try {
   await screenshot('1-dashboard');
 
   await page
-    .getByRole('link', { name: /Trino Web UI/ })
+    .getByRole('link', { name: /Spark History Server/ })
     .first()
     .click();
   await expectGate('bookmark');

@@ -32,10 +32,11 @@ export const demoGlobalBookmarks: BookmarkLink[] = [
 export const demoBookmarks: Bookmark[] = [
   {
     id: 'demo-bookmark-0',
-    productId: 'trino',
-    name: 'Trino Web UI',
+    // Not Trino: the demo should lead to the cockpit's own Trino module.
+    productId: 'spark',
+    name: 'Spark History Server',
     environment: 'Staging',
-    url: 'https://trino.demo.example/ui/',
+    url: 'https://spark-history.demo.example/',
     pinned: true,
     createdAt: '2026-01-01T00:00:00.000Z'
   },
