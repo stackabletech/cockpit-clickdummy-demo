@@ -9,6 +9,7 @@
     "build": "vite build",
     "build:demo": "VITE_COCKPIT_DEMO=true DATABASE_PASSWORD=unused-by-demo STACKABLE_COCKPIT_SESSION_SECRET=unused-by-the-static-demo-0123456789 STACKABLE_COCKPIT_STORAGE_BROWSER_ENABLED=true STACKABLE_COCKPIT_TRINO_URL=http://trino.demo.invalid:8080 vite build",
     "serve:demo": "node dev/serve-demo.mjs",
+    "smoke:demo": "node dev/demo-smoke.mjs",
     "preview": "vite preview --host",
     "prepare": "svelte-kit sync || echo '' && npm run generate:antlr",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",

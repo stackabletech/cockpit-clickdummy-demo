@@ -96,7 +96,8 @@ export default defineConfig(
     files: [
       'e2e/support/**/*.ts',
       'src/lib/editor/grammar/patch-generated.mjs',
-      'dev/serve-demo.mjs'
+      'dev/serve-demo.mjs',
+      'dev/demo-smoke.mjs'
     ],
     rules: { 'no-console': 'off' }
   },

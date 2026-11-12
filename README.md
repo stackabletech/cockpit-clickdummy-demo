@@ -5,7 +5,8 @@
 >
 > - Build and serve it locally: `npm run build:demo && npm run serve:demo`
 > - Every push to `main` deploys it (`.github/workflows/demo-pages.yaml`).
-> - To update, merge the cockpit's `main` into this repository's `main`. The cockpit's own CI
+> - To update, run `/sync-upstream` in Claude Code, or merge the cockpit's `main` into this
+>   repository's `main` by hand (steps in `.claude/skills/sync-upstream/SKILL.md`). The cockpit's own CI
 >   workflows and Dependabot config are removed here; if a merge brings changes to them, delete
 >   them again.
 
