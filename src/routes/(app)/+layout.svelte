@@ -1,6 +1,7 @@
 <script lang="ts">
   import { browser } from '$app/environment';
   import { page } from '$app/state';
+  import { base } from '$app/paths';
   import * as m from '$lib/paraglide/messages.js';
   import Sidebar from '$lib/components/layout/sidebar/Sidebar.svelte';
   import Header from '$lib/components/layout/header/Header.svelte';
@@ -35,9 +36,10 @@
   function pageTitle(): () => string {
     // Unknown pages render the 404 of the catch-all route.
     if (page.route.id === '/(app)/[...path]') return m.error_not_found_title;
+    const path = page.url.pathname.slice(base.length) || '/';
     return (
-      pageTitles[page.url.pathname] ??
-      (page.url.pathname.startsWith('/storage') ? m.page_title_storage : m.page_title_default)
+      pageTitles[path] ??
+      (path.startsWith('/storage') ? m.page_title_storage : m.page_title_default)
     );
   }
 

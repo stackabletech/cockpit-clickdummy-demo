@@ -1,11 +1,14 @@
 import { browser } from '$app/environment';
 import { z } from 'zod';
 import * as m from '$lib/paraglide/messages.js';
+import { DEMO } from '$lib/demo/flag';
+import { demoSql } from '$lib/demo/fixtures/trino';
 
 const MAX_TABS = 8;
 const INDEX_KEY = 'trino_tabs_index';
 const TAB_KEY_PREFIX = 'trino_tab_';
-const DEFAULT_SQL = 'SELECT 1';
+// THROWAWAY POC: the static demo starts with its example queries.
+const DEFAULT_SQL = DEMO ? demoSql() : 'SELECT 1';
 const DEBOUNCE_MS = 500;
 
 /** Maximum characters allowed per tab's SQL content. */

@@ -1,4 +1,6 @@
 import { browser } from '$app/environment';
+import { resolve } from '$app/paths';
+import { DEMO } from '$lib/demo/flag';
 import { error, isHttpError, redirect } from '@sveltejs/kit';
 import { connectionHostname, connectionStore } from '$lib/storage/connection-store.svelte.js';
 import { STORAGE_CONNECTION_ID_HEADER } from '$lib/storage/connection-id-header.js';
@@ -17,7 +19,7 @@ const EMPTY_PAGE: StoragePage = {
 /** A session or connection problem sends the user back to the connect form. */
 async function throwListError(res: Response, bucket: string): Promise<never> {
   const body: unknown = await res.json().catch(() => null);
-  if (res.status === 401 || isNotConnectedBody(body)) throw redirect(303, '/storage');
+  if (res.status === 401 || isNotConnectedBody(body)) throw redirect(303, resolve('/storage'));
   if (res.status === 403) throw error(403, m.storage_error_access_denied({ bucket }));
   const message = (body as { message?: string } | null)?.message;
   throw error(res.status, message ?? 'Failed to load objects');
@@ -34,17 +36,19 @@ async function throwListError(res: Response, bucket: string): Promise<never> {
  */
 export const load: PageLoad = async ({ fetch, url, data, parent }) => {
   const { connection, bucket, prefix } = data;
+  // THROWAWAY POC: prerendering the static demo has no API to call.
+  if (DEMO && !browser) return { connection, bucket, prefix, objects: EMPTY_PAGE, hydrating: true };
 
   // The storage layout load populates `connectionStore` in the browser and
   // provides the saved connections for the hostname check below.
   const { connections } = await parent();
 
   const connectionId = connectionStore.activeConnectionId ?? data.activeConnectionId;
-  if (!connectionId) throw redirect(303, '/storage');
+  if (!connectionId) throw redirect(303, resolve('/storage'));
   // A link to a storage the user is not connected to (e.g. from another
   // connection's recent locations) must not list the active connection's bucket.
   const active = connections.find((c) => c.id === connectionId);
-  if (!active) throw redirect(303, '/storage');
+  if (!active) throw redirect(303, resolve('/storage'));
   if (connectionHostname(active) !== connection) {
     throw error(404, { message: 'Not connected', reason: 'not-connected', connection });
   }

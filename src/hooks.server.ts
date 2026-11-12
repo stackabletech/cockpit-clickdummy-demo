@@ -19,6 +19,8 @@ import '$lib/server/trino/config.js';
 import { storageEncryptionKey } from '$lib/server/storage/encryption-key.js';
 import { notConnected } from '$lib/server/storage/not-connected.js';
 import { runMigrations } from '$lib/server/migrate.js';
+import { DEMO } from '$lib/demo/flag.js';
+import { handleDemoUser } from '$lib/server/demo.js';
 
 // Allow self-signed TLS certificates in development (e.g. local Trino with self-signed certs).
 if (dev) {
@@ -114,13 +116,15 @@ const handleStorageConnection: Handle = async ({ event, resolve }) => {
   return resolve(event);
 };
 
-export const handle = sequence(
-  requestLogger,
-  handleMetrics,
-  handleParaglide,
-  ...(oidcEnabled ? [handleAuth, handleAuthGuard] : []),
-  handleStorageConnection
-);
+export const handle = DEMO
+  ? sequence(requestLogger, handleParaglide, handleDemoUser)
+  : sequence(
+      requestLogger,
+      handleMetrics,
+      handleParaglide,
+      ...(oidcEnabled ? [handleAuth, handleAuthGuard] : []),
+      handleStorageConnection
+    );
 
 /**
  * Validate required environment variables at server startup (fail-fast).
@@ -128,6 +132,7 @@ export const handle = sequence(
  * detected immediately rather than on the first request that uses the key.
  */
 export const init: ServerInit = async () => {
+  if (DEMO) return;
   if (!(await runMigrations())) {
     throw new Error('Database migrations failed');
   }

@@ -5,6 +5,7 @@
   import ThemeToggle from './ThemeToggle.svelte';
   import UserMenu from './UserMenu.svelte';
   import type { User } from '$lib/types/auth.js';
+  import { DEMO } from '$lib/demo/flag';
 
   let {
     title = m.page_title_dashboard(),
@@ -38,7 +39,10 @@
   <div class="flex-1"></div>
 
   <div class="flex items-center gap-1">
-    <LanguageSwitcher />
+    <!-- THROWAWAY POC: the static demo is English only. -->
+    {#if !DEMO}
+      <LanguageSwitcher />
+    {/if}
     <ThemeToggle />
     {#if user}
       <UserMenu {user} />

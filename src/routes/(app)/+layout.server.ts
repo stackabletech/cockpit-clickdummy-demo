@@ -4,9 +4,21 @@ import { listBookmarks } from '$lib/server/dashboard/bookmarks-db.js';
 import { globalBookmarks } from '$lib/server/dashboard/config.js';
 import { dashboardBookmarksTotal } from '$lib/server/metrics.js';
 import { BOOKMARKS_DEPENDENCY, type Bookmark } from '$lib/dashboard/types';
+import { DEMO } from '$lib/demo/flag';
+import { demoBookmarks, demoGlobalBookmarks } from '$lib/demo/fixtures/bookmarks';
 
 export const load: LayoutServerLoad = async ({ locals, depends }) => {
   depends(BOOKMARKS_DEPENDENCY);
+  // THROWAWAY POC: fixed bookmarks in the static demo.
+  if (DEMO) {
+    return {
+      user: locals.user,
+      storageBrowserEnabled,
+      globalBookmarks: demoGlobalBookmarks,
+      bookmarks: demoBookmarks,
+      bookmarksFailed: false
+    };
+  }
   return {
     user: locals.user,
     storageBrowserEnabled,

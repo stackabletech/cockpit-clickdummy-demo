@@ -8,9 +8,14 @@ import { userStorageConnections } from '$lib/server/schema.js';
 import { decrypt } from '$lib/server/storage/encryption.js';
 import { storageEncryptionKey } from '$lib/server/storage/encryption-key.js';
 import type { ConnectionListItem } from '$lib/storage/connection-store.svelte.js';
+import { DEMO } from '$lib/demo/flag';
+import { demoConnections } from '$lib/demo/fixtures/storage';
 
 export const load: PageServerLoad = async ({ locals }) => {
   locals.logger.debug('loading storage connections management page');
+
+  // THROWAWAY POC: the fixed connection of the static demo.
+  if (DEMO) return { connections: demoConnections };
 
   const userId = locals.user?.id;
   if (!userId) return { connections: [] as ConnectionListItem[] };
@@ -45,10 +50,14 @@ export const load: PageServerLoad = async ({ locals }) => {
   return { connections };
 };
 
-export const actions: Actions = {
+const realActions: Actions = {
   deleteConnection: async (event) => {
     const failure = await deleteConnectionAction(event);
     if (failure) return failure;
     throw redirect(303, '/settings/connections');
   }
 };
+
+// THROWAWAY POC: pages with actions cannot be prerendered; the demo
+// answers their form posts in the browser instead.
+export const actions = (DEMO ? undefined : realActions) as Actions;

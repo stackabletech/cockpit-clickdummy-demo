@@ -17,6 +17,7 @@ import {
 import { ConnectionSchema, type ConnectionMessage } from './validation.js';
 import type { Actions, PageServerLoad } from './$types';
 import * as m from '$lib/paraglide/messages.js';
+import { DEMO } from '$lib/demo/flag';
 
 type ConnectionData = Infer<typeof ConnectionSchema>;
 type ConnectionInput = InferIn<typeof ConnectionSchema>;
@@ -32,7 +33,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   return { connectionForm, activeQueries, trinoConfigured, userClientExists, completionEnabled };
 };
 
-export const actions: Actions = {
+const realActions: Actions = {
   save: async ({ request, locals }) => {
     const log = locals.logger;
 
@@ -104,3 +105,7 @@ export const actions: Actions = {
     return message(form, { type: 'success' } satisfies ConnectionMessage);
   }
 };
+
+// THROWAWAY POC: pages with actions cannot be prerendered; the demo
+// answers their form posts in the browser instead.
+export const actions = (DEMO ? undefined : realActions) as Actions;

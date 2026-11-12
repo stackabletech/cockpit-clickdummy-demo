@@ -4,8 +4,12 @@
   import { theme } from '$lib/theme.svelte';
   import NavigationProgress from '$lib/components/layout/NavigationProgress.svelte';
   import * as m from '$lib/paraglide/messages.js';
+  import { DEMO } from '$lib/demo/flag';
 
   let { children } = $props();
+
+  // THROWAWAY POC: only the static demo build loads the contact modal.
+  const demoModal = DEMO ? import('$lib/components/demo/DemoContactModal.svelte') : null;
 
   onMount(() => {
     document.body.classList.add('hydrated');
@@ -27,3 +31,9 @@
 </svelte:head>
 
 {@render children()}
+
+{#if demoModal}
+  {#await demoModal then { default: DemoContactModal }}
+    <DemoContactModal />
+  {/await}
+{/if}

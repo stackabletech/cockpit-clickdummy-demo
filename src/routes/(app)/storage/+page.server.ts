@@ -22,6 +22,8 @@ import { storageEncryptionKey } from '$lib/server/storage/encryption-key.js';
 import type { S3ConnectionConfig } from '$lib/server/storage/types.js';
 import type { ConnectionMetadata } from '$lib/storage/connection-types.js';
 import * as m from '$lib/paraglide/messages.js';
+import { DEMO } from '$lib/demo/flag';
+import { demoConnections } from '$lib/demo/fixtures/storage';
 
 type ConnectionData = Infer<typeof StorageConnectionSchema>;
 type ConnectionInput = InferIn<typeof StorageConnectionSchema>;
@@ -38,7 +40,9 @@ export const load: PageServerLoad = async ({ locals }) => {
   const userId = locals.user?.id;
   let connections: ConnectionMetadata[] = [];
 
-  if (userId) {
+  if (DEMO) {
+    connections = demoConnections.map(({ id, name, endpoint }) => ({ id, name, endpoint }));
+  } else if (userId) {
     const rows = await db
       .select()
       .from(userStorageConnections)
@@ -63,7 +67,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   return { connectionForm, connections };
 };
 
-export const actions: Actions = {
+const realActions: Actions = {
   connect: async ({ request, locals }) => {
     const log = locals.logger;
     const form = await superValidate<ConnectionData, StorageConnectionMessage, ConnectionInput>(
@@ -194,3 +198,7 @@ export const actions: Actions = {
     throw redirect(303, '/storage');
   }
 };
+
+// THROWAWAY POC: pages with actions cannot be prerendered; the demo
+// answers their form posts in the browser instead.
+export const actions = (DEMO ? undefined : realActions) as Actions;

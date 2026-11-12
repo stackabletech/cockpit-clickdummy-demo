@@ -15,7 +15,11 @@ export default defineConfig({
     paraglideVitePlugin({
       project: './project.inlang',
       outdir: './src/lib/paraglide',
-      strategy: ['cookie', 'preferredLanguage', 'baseLocale']
+      // THROWAWAY POC: the static demo is English only.
+      strategy:
+        process.env.VITE_COCKPIT_DEMO === 'true'
+          ? ['baseLocale']
+          : ['cookie', 'preferredLanguage', 'baseLocale']
     })
   ],
   optimizeDeps: {

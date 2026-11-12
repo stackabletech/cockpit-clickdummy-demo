@@ -948,5 +948,10 @@
   "storage_transfer_failed_move": "Could not move: {counts}.",
   "storage_transfer_status_unknown": "{count} with unknown outcome",
   "storage_transfer_item_unknown": "outcome unknown, check the folder",
-  "storage_transfer_running": "A paste or move is still running. Wait until it has finished."
+  "storage_transfer_running": "A paste or move is still running. Wait until it has finished.",
+  "demo_gate_title": "Interested? Get in contact",
+  "demo_gate_message": "This demo runs on sample data, so it cannot run your own queries or change anything. To see Stackable Cockpit with your own data, talk to us.",
+  "demo_gate_contact": "Contact us",
+  "demo_gate_close": "Keep exploring",
+  "demo_not_available": "Not available in the demo."
 }

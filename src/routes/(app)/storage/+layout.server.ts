@@ -1,4 +1,6 @@
 import type { LayoutServerLoad } from './$types';
+import { DEMO } from '$lib/demo/flag';
+import { demoConnections } from '$lib/demo/fixtures/storage';
 import { error } from '@sveltejs/kit';
 import { desc, eq } from 'drizzle-orm';
 import { storageBrowserEnabled } from '$lib/server/feature-flags.js';
@@ -15,6 +17,17 @@ export const load: LayoutServerLoad = async ({ locals }) => {
   }
 
   locals.logger.debug('loading storage layout');
+
+  // THROWAWAY POC: the fixed connection of the static demo.
+  if (DEMO) {
+    return {
+      connected: false,
+      buckets: [] as string[],
+      connectionType: null,
+      connections: demoConnections,
+      activeConnectionId: demoConnections[0].id
+    };
+  }
 
   const userId = locals.user?.id;
   if (!userId) {

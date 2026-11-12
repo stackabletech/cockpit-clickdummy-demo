@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
+  import { base, resolve } from '$app/paths';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
   import * as m from '$lib/paraglide/messages.js';
@@ -62,11 +62,13 @@
   // Explicitly derive currentPath so Svelte 5 tracks page.url.pathname
   // as a reactive dependency. Without this, changes to page.url.pathname
   // may not reliably trigger re-renders in all browsers during hydration.
-  const currentPath = $derived(page.url.pathname);
+  // Compared without the base path, so `/` stays the dashboard under one.
+  const currentPath = $derived(page.url.pathname.slice(base.length) || '/');
 
   function isActive(href: string): boolean {
-    if (href === '/') return currentPath === '/';
-    return currentPath.startsWith(href);
+    const path = href.slice(base.length) || '/';
+    if (path === '/') return currentPath === '/';
+    return currentPath.startsWith(path);
   }
 
   function handleNavClick(event: MouseEvent, item: NavItem) {
