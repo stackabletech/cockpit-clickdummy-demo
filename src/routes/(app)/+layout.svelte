@@ -61,7 +61,7 @@
 </script>
 
 <svelte:head>
-  <title>{title} | {m.page_title_suffix()}</title>
+  <title>{title} | {m.app_name()}</title>
 </svelte:head>
 
 <div class="bg-base-100 flex h-dvh overflow-hidden">
