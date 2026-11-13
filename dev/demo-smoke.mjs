@@ -24,6 +24,10 @@ page.on('response', (r) => r.status() >= 400 && problems.push(`HTTP ${r.status()
 const gate = page.getByRole('dialog').filter({ hasText: /get in contact|interested/i });
 async function expectGate(label) {
   await gate.waitFor({ timeout: 5000 });
+  const contact = await gate.getByRole('link', { name: /contact/i }).getAttribute('href');
+  if (!new URL(contact).searchParams.get('subject')?.includes('Stackable Web UI')) {
+    problems.push(`Contact link without the subject: ${contact}`);
+  }
   console.log(`ok  ${label}: contact modal`);
   await page.getByRole('button', { name: /keep exploring/i }).click();
   await gate.waitFor({ state: 'hidden' });

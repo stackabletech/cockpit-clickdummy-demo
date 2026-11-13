@@ -6,7 +6,10 @@
   import Modal from '$lib/components/Modal.svelte';
   import { demoGate } from '$lib/demo/gate.svelte';
 
-  const CONTACT_URL = 'https://stackable.tech/en/contact/';
+  // The contact form prefills its subject from `?subject=`.
+  const CONTACT_URL = `https://stackable.tech/en/contact/?subject=${encodeURIComponent(
+    'I’d like to learn more about the Stackable Web UI'
+  )}`;
 
   const uid = $props.id();
 </script>
