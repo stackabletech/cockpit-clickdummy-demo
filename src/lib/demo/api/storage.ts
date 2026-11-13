@@ -187,6 +187,18 @@ function preview(req: DemoRequest): Response {
   if (!file) return demoError(404);
   const parquet = key.endsWith('.parquet') ? demoParquet(key) : null;
   if (parquet) return parquetNdjson(parquet, file.size, req);
+  // Like the server's binaryPreview() for KNOWN_BINARY_TYPES: no body, marked as not renderable.
+  if (file.content === undefined && file.contentType) {
+    return new Response(null, {
+      headers: {
+        'Content-Type': file.contentType,
+        'X-Preview-Renderable': 'false',
+        'X-Preview-Total-Size': String(file.size),
+        'X-Preview-Bytes': '0',
+        'X-Preview-Truncated': 'false'
+      }
+    });
+  }
   if (file.content === undefined) {
     return new Response(BINARY_BYTES, {
       headers: {

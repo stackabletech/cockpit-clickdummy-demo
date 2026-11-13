@@ -123,6 +123,19 @@ try {
     .waitFor();
   console.log('ok  binary preview: fallback');
   await screenshot('6-binary');
+  await page.keyboard.press('Escape');
+
+  // Known binary content types: the server sends no body and X-Preview-Renderable: false.
+  await page.goto(`${origin}/storage/browse/s3.demo.example/raw-data/clickstream/2026/04/01`);
+  await page.getByText('events-0001.json.gz').first().click();
+  await page.getByRole('button', { name: /^preview$/i }).click();
+  await page
+    .getByRole('dialog')
+    .getByText(/binary/i)
+    .first()
+    .waitFor();
+  console.log('ok  binary preview: not renderable');
+  await screenshot('6b-not-renderable');
   await page
     .getByRole('dialog')
     .getByRole('button', { name: /download full file/i })
