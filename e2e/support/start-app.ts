@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { StartedTestContainer } from 'testcontainers';
 import { startPostgres } from './containers/postgres.setup.js';
 import { startGarage } from './containers/garage.setup.js';
+import { startPlaywrightBrowserServer } from './containers/playwright-browser.setup.js';
 import { productionBodySizeLimit } from './body-size-limit.js';
 
 process.loadEnvFile(path.join(import.meta.dirname, '../..', '.env.test'));
@@ -32,6 +33,9 @@ async function main() {
   // and npm run test:e2e use the same startup order and automatic teardown.
   containers.push(await startPostgres());
   containers.push(await startGarage());
+  if (process.env.DOCS_SCREENSHOTS) {
+    containers.push(await startPlaywrightBrowserServer());
+  }
 
   const testEnv = Object.fromEntries(
     Object.entries(process.env).filter(
@@ -43,7 +47,7 @@ async function main() {
   await fs.writeFile(stateFile, JSON.stringify(testEnv), { mode: 0o600 });
 
   // The server's init hook runs migrations before it starts accepting requests.
-  app = spawn(process.execPath, ['build/index.js'], {
+  app = spawn(process.execPath, ['server.js'], {
     stdio: 'inherit',
     env: { ...process.env, BODY_SIZE_LIMIT: await productionBodySizeLimit() }
   });
